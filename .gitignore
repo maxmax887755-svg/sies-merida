@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+build/
+dist/
+
+# Entornos
+venv/
+.venv/
+env/
+.env
+
+# Modelos y evidencia generada
+models/*.pth
+models/*.pkl
+evidencia/*.png
+evidencia/*.html
+
+# IDE / SO
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
