@@ -1,4 +1,5 @@
 """Dashboard Streamlit.  Ejecutar: streamlit run dashboard/app.py (con la API activa)."""
+import sys
 from pathlib import Path
 
 import requests
@@ -6,6 +7,10 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
+
+from dashboard.mapa import render_mapa
 
 st.set_page_config(page_title="SIES-Merida", layout="wide")
 st.title("SIES-Merida | InnovaFest Merida 2026")
@@ -30,6 +35,10 @@ try:
 except Exception:
     st.error("No se pudo conectar con la API. Inicia: uvicorn src.api:app")
 
+st.divider()
+render_mapa()
+st.divider()
+
 if ejecutar:
     with st.spinner("Ejecutando ciclo (la primera vez entrena el modelo)..."):
         try:
@@ -51,6 +60,17 @@ if res:
     c2.metric("Accion", res["accion"]["accion"])
     c3.metric("Conc. maxima (kg)", "%.1f" % res["impacto"]["concentracion_maxima"])
     c4.metric("Token", res["token"]["token_id"] if res["token"] else "-")
+
+    clima = res.get("clima") or {}
+    c1, c2, c3, c4 = st.columns(4)
+    if "error" not in clima and clima:
+        c1.metric("Temperatura (C)", clima["temperatura_c"])
+        c2.metric("Viento (km/h)", clima["viento_kmh"])
+        c3.metric("Humedad (%)", clima["humedad_pct"])
+    else:
+        c1.metric("Clima real", "No disponible")
+    alertas = res.get("alertas")
+    c4.metric("Alertas SMS (demo)", alertas["destinatarios"] if alertas else 0)
 
     if res.get("barrera"):
         st.info("Barrera recomendada: %s" % res["barrera"])

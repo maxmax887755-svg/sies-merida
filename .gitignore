@@ -25,3 +25,4 @@ evidencia/*.html
 .idea/
 .DS_Store
 Thumbs.db
+*.bak_v1

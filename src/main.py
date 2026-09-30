@@ -1,7 +1,9 @@
-"""Orquestador del ciclo completo SIES-Merida."""
+"""Orquestador del ciclo completo SIES-Merida (v2: clima real + alertas SMS demo)."""
 from datetime import datetime
 
 from src.actuator import ActuadorAutonomo
+from src.alertas import SistemaAlertas
+from src.apis_reales import APIsReales
 from src.digital_twin import DigitalTwinManglar
 from src.edge_ai import EdgeAnomalyDetector
 from src.logger_config import configurar_logger
@@ -16,7 +18,7 @@ NODOS_YUCATAN = [
     ("Chicxulub", 21.2833, -89.6000),
 ]
 NODO_DERRAME = "Progreso"
-FOCO_DERRAME_KM = (1.0, 1.5)      # posicion del derrame dentro del dominio 5 x 3 km
+FOCO_DERRAME_KM = (2.5, 1.5)      # centro del dominio 5 x 3 km (deja espacio a la deriva)
 MASA_DERRAME_KG = 2000.0
 HECTAREAS_PROTEGIDAS = 25.0
 LECTURAS_NORMALES = 5
@@ -28,7 +30,7 @@ _componentes = None
 
 
 def obtener_componentes():
-    """Inicializa (una sola vez) detector, actuador, tokenizador y nodos."""
+    """Inicializa (una sola vez) detector, actuador, tokenizador, nodos, clima y alertas."""
     global _componentes
     if _componentes is None:
         _componentes = {
@@ -36,6 +38,8 @@ def obtener_componentes():
             "actuador": ActuadorAutonomo(),
             "tokenizador": TokenizadorEcosistemico(),
             "nodos": [SensorNode(nombre, lat, lon) for nombre, lat, lon in NODOS_YUCATAN],
+            "apis": APIsReales(),
+            "alertas": SistemaAlertas(),
         }
     return _componentes
 
@@ -44,9 +48,26 @@ def ejecutar_ciclo_completo(inyectar_anomalia=True, masa_kg=MASA_DERRAME_KG):
     log = configurar_logger("SIES.main")
     comp = obtener_componentes()
     detector, actuador, tokenizador = comp["detector"], comp["actuador"], comp["tokenizador"]
+    apis = comp["apis"]
     log.info("Ciclo iniciado (derrame=%s, masa=%.0f kg)", inyectar_anomalia, masa_kg)
 
+    # 0) Clima real
+    clima = apis.clima_actual()
+    if "error" not in clima:
+        log.info("Clima real en Progreso: %sC, viento %s km/h",
+                 clima["temperatura_c"], clima["viento_kmh"])
+    else:
+        log.warning("Clima real no disponible; el gemelo usa el viento por defecto")
+
     twin = DigitalTwinManglar()
+    viento = None
+    if "error" not in clima:
+        viento = apis.viento_para_gemelo(clima)
+        twin.vx = viento["vx"]
+        twin.vy = viento["vy"]
+        log.info("Deriva aplicada al gemelo: vx=%.3f vy=%.3f km/h (%s)",
+                 viento["vx"], viento["vy"], viento["fuente"])
+
     if inyectar_anomalia:
         twin.inyectar_derrame(FOCO_DERRAME_KM[0], FOCO_DERRAME_KM[1], masa_kg)
         log.info("Derrame de %.0f kg inyectado en %s", masa_kg, NODO_DERRAME)
@@ -96,6 +117,17 @@ def ejecutar_ciclo_completo(inyectar_anomalia=True, masa_kg=MASA_DERRAME_KG):
     # 4) Actuador
     accion = actuador.decidir(deteccion, impacto["concentracion_maxima"], barrera)
 
+    # 4b) Alertas SMS (modo demo)
+    alertas_info = None
+    if anomalia and accion["accion"] != "ninguna":
+        n = comp["alertas"].alertar_autoridades(
+            ubicacion=nodo_afectado or NODO_DERRAME,
+            accion=accion["accion"],
+            masa_kg=masa_kg,
+        )
+        alertas_info = {"destinatarios": n, "modo": "demo"}
+        log.info("Alertas SMS enviadas a %d destinatarios (demo)", n)
+
     # 5) Token
     token = None
     if anomalia:
@@ -114,6 +146,9 @@ def ejecutar_ciclo_completo(inyectar_anomalia=True, masa_kg=MASA_DERRAME_KG):
         "barrera": barrera,
         "accion": accion,
         "token": token,
+        "clima": clima,
+        "viento": viento,
+        "alertas": alertas_info,
     }
 
     # 6) Reporte y graficas
@@ -126,11 +161,12 @@ def ejecutar_ciclo_completo(inyectar_anomalia=True, masa_kg=MASA_DERRAME_KG):
 
 def main():
     log = configurar_logger("SIES.main")
-    log.info("SIES-Merida | InnovaFest Merida 2026")
+    log.info("SIES-Merida v2 | InnovaFest Merida 2026")
     resultado = ejecutar_ciclo_completo(inyectar_anomalia=True, masa_kg=MASA_DERRAME_KG)
-    log.info("Resumen: anomalia=%s | accion=%s | token=%s",
+    log.info("Resumen: anomalia=%s | accion=%s | token=%s | alertas=%s",
              resultado["anomalia"], resultado["accion"]["accion"],
-             resultado["token"]["token_id"] if resultado["token"] else "-")
+             resultado["token"]["token_id"] if resultado["token"] else "-",
+             resultado["alertas"]["destinatarios"] if resultado["alertas"] else 0)
     log.info("Archivos en evidencia/: gemelo_digital.png, series_temporales.png, reporte.html")
 
 
