@@ -65,12 +65,10 @@ class DigitalTwinManglar:
         n_sub = max(1, math.ceil(self.dt_paso / self._dt_estable()))
         dt = self.dt_paso / n_sub
         pico = float(c.max())
-        alcanzadas = c > 0.1  # celdas que superan 0.1 kg en algun momento de la simulacion
         for _ in range(pasos):
             for _ in range(n_sub):
                 c = self._paso(c, dt)
             pico = max(pico, float(c.max()))
-            alcanzadas |= (c > 0.1)
         self.mapa_prediccion = c
         masa = float(c.sum())
         if masa > 1e-9:
@@ -86,7 +84,7 @@ class DigitalTwinManglar:
             "concentracion_maxima_final": float(c.max()),
             "masa_inicial_kg": float(self.concentracion.sum()),
             "masa_final_kg": masa,
-            "celdas_afectadas": int(alcanzadas.sum()),
+            "celdas_afectadas": int((c > 1.0).sum()),
             "centroide_x_km": cx,
             "centroide_y_km": cy,
         }
